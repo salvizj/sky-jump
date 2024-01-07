@@ -4,7 +4,7 @@ import os
 from constants import  *
 
 # Temp values
-scroll = 0
+scroll = 0 # Players y movement
 bg_scroll = 0
 game_over = False
 score = 0
@@ -25,8 +25,12 @@ bg_image = pygame.image.load('assets/bg/bg.png').convert_alpha()
 brown_plat = pygame.image.load('assets/platforms/brown_plat.png').convert_alpha()
 green_plat = pygame.image.load('assets/platforms/green_plat.png').convert_alpha()
 white_plat = pygame.image.load('assets/platforms/white_plat.png').convert_alpha()
+enemy_image = pygame.image.load('assets/enemy/enemy.png').convert_alpha()
 platform_images = [brown_plat, green_plat, white_plat]
 
+# Transform bg so it fits in whole screen
+bg_image = pygame.transform.scale(bg_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
+    
 # Define font
 font = pygame.font.SysFont('Comic Sans MS', 24)
 
@@ -44,19 +48,18 @@ def draw_text(text, font, text_col, x, y):
 
 # Function for drawing info panel
 def draw_panel():
-	pygame.draw.rect(screen, PANEL, (0, 0, SCREEN_WIDTH, 30))
-	pygame.draw.line(screen, WHITE, (0, 30), (SCREEN_WIDTH, 30), 2)
 	draw_text('SCORE: ' + str(score), font, WHITE, 0, 0)
 
 # Function for drawing the background
 def draw_bg(bg_scroll):
-	screen.blit(bg_image, (0, 0 + bg_scroll))
-	screen.blit(bg_image, (0, -SCREEN_HEIGHT + bg_scroll))  
- 
+    screen.blit(bg_image, (0, 0 + bg_scroll))
+    screen.blit(bg_image, (0, -SCREEN_HEIGHT + 0 + bg_scroll))
+
 class Platform(pygame.sprite.Sprite):
-    def __init__(self, x, y, width, moving):
+    def __init__(self, x, y, width, moving, score):
         pygame.sprite.Sprite.__init__(self)
-        platform_image = random.choice(platform_images)
+        platform_index = (score // 1500) % len(platform_images)
+        platform_image = platform_images[platform_index]
         self.image = pygame.transform.scale(platform_image, (width, PLATFORM_IMG_SCALER))
         self.moving = moving
         self.move_counter = random.randint(0, 50)
@@ -144,21 +147,51 @@ class Player():
 						self.vel_y = -JUMP_SPEED
 		return dy
 
+    # Makes Illusion that player jumps upwards insted it lowers world by scrolls value
 	def check_screen_bounce(self, scroll, dy):
 		if self.rect.top <= SCROLL_THRESH:
 			if self.vel_y < 0:
 				scroll = -dy
 		return scroll
 
-    # Updated players posision from delta x, y
+    # Updated players posision from delta x, y and scroll
 	def update_position(self, dx, dy, scroll):
 		self.rect.x += dx
 		self.rect.y += dy + scroll
-		self.mask = pygame.mask.from_surface(self.image)
   
     # Draws players img
 	def draw(self):
 		screen.blit(pygame.transform.flip(self.image, self.flip, False), (self.rect.x - PLAYER_RECTANGLE_X_OFFSET, self.rect.y - PLAYER_RECTANGLE_Y_OFFSET))
+  
+class Enemy(pygame.sprite.Sprite):
+    def __init__(self, SCREEN_WIDTH, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.direction = random.choice([-1, 1])
+        self.speed = ENEMY_SPEED
+        self.image = pygame.transform.scale(enemy_image, (ENEMY_IMAGE_SCALE, ENEMY_IMAGE_SCALE))
+        self.rect = self.image.get_rect()
+        if self.direction == 1:
+            self.rect.x = 0
+        else:
+            self.rect.x = SCREEN_WIDTH - self.rect.width
+        self.rect.y = y
+        
+    # Updates enemy
+    def update(self, scroll):
+        self.rect.y += scroll
+        self.rect.x += self.speed * self.direction 
+        if self.rect.top > SCREEN_HEIGHT or self.rect.right < 0 or self.rect.left > SCREEN_WIDTH:
+            self.kill()
+              
+    # Check if player touches the enemy
+    def check_collision(self, player_rect):
+        if self.rect.colliderect(player_rect):
+            return True
+        return False
+    
+    # Draws enemy
+    def draw(self, screen):
+        screen.blit(self.image, self.rect)
 
 # Draws new bg if current bg has reached screen height
 def handle_background_scroll(bg_scroll, scroll, SCREEN_HEIGHT):
@@ -189,14 +222,40 @@ def check_score_500(p_type, score):
         p_moving = False
     return p_moving
 
+# Generate enemies
+def generate_enemies(enemy_group, score, SCREEN_WIDTH, ENEMY_SPAWN_Y):
+    if len(enemy_group) == 0 and score > 1500:
+        enemy = Enemy(SCREEN_WIDTH, ENEMY_SPAWN_Y)
+        enemy_group.add(enemy)
+        
+# Updates enemy posisions
+def update_enemies(enemy_group, scroll):
+    for enemy in enemy_group:
+        enemy.update(scroll)
+        
+# Checks for enemy and player collisions
+def check_collision(enemy_group, player):
+    game_over = False
+    for enemy in enemy_group:
+        if enemy.check_collision(player.rect): 
+            game_over = True
+            break
+    return game_over
+
+# Update score
+def update_score(scroll):
+    if scroll > 0:
+        score += scroll
+
 # Player instance
 player = Player(PLAYER_X , PLAYER_Y)
 
 # Create sprite groups
 platform_group = pygame.sprite.Group()
+enemy_group = pygame.sprite.Group()
 
 # Create starting platform from Platform class with not mooving type
-platform = Platform(STARTING_PLATFORM_X, STARTING_PLATFORM_Y, STARTING_PLATFORM_WIDTH, False)
+platform = Platform(STARTING_PLATFORM_X, STARTING_PLATFORM_Y, STARTING_PLATFORM_WIDTH, False, score)
 platform_group.add(platform)
 
 # Game loop
@@ -216,7 +275,19 @@ while run:
   
 		# Draw line at previous high score
 		draw_high_score_line(screen, WHITE, score, high_score, SCROLL_THRESH, SCREEN_WIDTH, font)
-
+  
+		# Generate enemies
+		generate_enemies(enemy_group, score, SCREEN_WIDTH, ENEMY_SPAWN_Y)
+  
+		# Update enemies
+		update_enemies(enemy_group, scroll)
+  
+		# Check for enemy collision
+		game_over = check_collision(enemy_group, player)
+  
+####################################################################################################################################
+#MAKE THIS A FUNCtion
+####################################################################################################################################       
 		# Generate platforms
 		if len(platform_group) < MAX_PLATFORMS:
       
@@ -232,17 +303,37 @@ while run:
 			p_moving = check_score_500(p_type, score)
    
             # Generates platforms with randomized paramaters from Platform class
-			platform = Platform(p_x, p_y, p_w, p_moving)
+			platform = Platform(p_x, p_y, p_w, p_moving, score)
 			platform_group.add(platform)
    
+			if random.random() < CHANCE_FOR_2_PLATFORMS: 
+				p_w2 = random.randint(PLATFROM_WIDTH_FROM, PLATFROM_WIDTH_TILL)
+				p_x2 = random.randint(0, SCREEN_WIDTH - p_w2)
+
+				# Check if the new platform overlaps with the existing one
+				if p_x2 < p_x + p_w and p_x2 + p_w2 > p_x:
+        
+					# If it does, adjust its x-coordinate
+					p_x2 = p_x + p_w + random.randint(50, 100)
+     
+				# Check if the new platform would be off-screen, and if so, adjust its x-coordinate
+				if p_x2 + p_w2 > SCREEN_WIDTH:
+					p_x2 = SCREEN_WIDTH - p_w2
+
+				platform2 = Platform(p_x2, p_y, p_w2, p_moving, score)
+				platform_group.add(platform2)
+  
 		#update platforms
 		platform_group.update(scroll)
+####################################################################################################################################
+####################################################################################################################################
 
+        # Update score
 		if scroll > 0:
 			score += scroll
-
 		#draw sprites
 		platform_group.draw(screen)
+		enemy_group.draw(screen)
 		player.draw()
 
 		#draw panel that shows current score
@@ -279,9 +370,12 @@ while run:
 				
 				#reset platforms
 				platform_group.empty()
-				
+    
+				#reset enemys
+				enemy_group.empty()
+    
 				#create starting platform
-				platform = Platform(STARTING_PLATFORM_X, STARTING_PLATFORM_Y, STARTING_PLATFORM_WIDTH, False)
+				platform = Platform(STARTING_PLATFORM_X, STARTING_PLATFORM_Y, STARTING_PLATFORM_WIDTH, False, score)
     
 				#add starting platform to platform_group
 				platform_group.add(platform)
