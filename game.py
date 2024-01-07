@@ -1,23 +1,33 @@
-import pygame
+import pygame 
 import random
 import os
 from constants import  *
 
 # Temp values
-scroll = 0 # Players y movement
+scroll = 0 
 bg_scroll = 0
 game_over = False
 score = 0
 fade_counter = 0
 
 pygame.init()
-
 # Create game window
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption('Sky climber')
 
 # Set frame rate
 clock = pygame.time.Clock()
+
+# Load the mp3 file
+jump_sound = pygame.mixer.Sound("assets/sound/jump.mp3")
+enemy_killed = pygame.mixer.Sound("assets/sound/fail.mp3")
+fall_sound = pygame.mixer.Sound("assets/sound/fall.mp3")
+start_sound = pygame.mixer.Sound("assets/sound/start.mp3")
+
+start_sound.play()
+
+# Set the volume
+pygame.mixer.music.set_volume(0.1)
 
 # Load images
 player_image = pygame.image.load('assets/player/player.png').convert_alpha()
@@ -30,9 +40,8 @@ platform_images = [brown_plat, green_plat, white_plat]
 
 # Transform bg so it fits in whole screen
 bg_image = pygame.transform.scale(bg_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
-    
-# Define font
-font = pygame.font.SysFont('Comic Sans MS', 24)
+
+font = pygame.font.SysFont('Arial', 28)
 
 # Reead high score if it existed
 if os.path.exists('score.txt'):
@@ -47,7 +56,7 @@ def draw_text(text, font, text_col, x, y):
 	screen.blit(img, (x, y))
 
 # Function for drawing info panel
-def draw_panel():
+def draw_score():
 	draw_text('SCORE: ' + str(score), font, WHITE, 0, 0)
 
 # Function for drawing the background
@@ -68,7 +77,7 @@ class Platform(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.x = x
         self.rect.y = y
-
+        
     def update(self, scroll):
         
 		# Moving platform side to side if it is a moving platform
@@ -98,7 +107,6 @@ class Player():
 		self.vel_y = 0
 		self.flip = False
   
-    # Handls player movement 
 	def move(self):
 		scroll = 0
 		dx, dy = self.process_keypresses()
@@ -107,10 +115,8 @@ class Player():
 		dy = self.check_platform_collision(dy)
 		scroll = self.check_screen_bounce(scroll, dy)
 		self.update_position(dx, dy, scroll)
-
 		return scroll
 
-    # Return the change in x and y directions (y-direction change is 0)
 	def process_keypresses(self):
 		dx = 0
 		key = pygame.key.get_pressed()
@@ -122,13 +128,11 @@ class Player():
 			self.flip = False
 		return dx, 0
 
-    # Adds gravity to delta y
 	def apply_gravity(self, dy):
 		self.vel_y += GRAVITY
 		dy += self.vel_y
 		return dy
 
-    # Checks for player to stay in screen returns delta x
 	def ensure_in_screen(self, dx):
 		if self.rect.left + dx < 0:
 			dx = -self.rect.left
@@ -136,12 +140,12 @@ class Player():
 			dx = SCREEN_WIDTH - self.rect.right
 		return dx
 
-    # Checks if player is collided with platform returns delta y
 	def check_platform_collision(self, dy):
 		for platform in platform_group:
 			if platform.rect.colliderect(self.rect.x, self.rect.y + dy, self.width, self.height):
 				if self.rect.bottom < platform.rect.centery:
 					if self.vel_y > 0:
+						jump_sound.play()
 						self.rect.bottom = platform.rect.top
 						dy = 0
 						self.vel_y = -JUMP_SPEED
@@ -154,12 +158,10 @@ class Player():
 				scroll = -dy
 		return scroll
 
-    # Updated players posision from delta x, y and scroll
 	def update_position(self, dx, dy, scroll):
 		self.rect.x += dx
 		self.rect.y += dy + scroll
   
-    # Draws players img
 	def draw(self):
 		screen.blit(pygame.transform.flip(self.image, self.flip, False), (self.rect.x - PLAYER_RECTANGLE_X_OFFSET, self.rect.y - PLAYER_RECTANGLE_Y_OFFSET))
   
@@ -176,20 +178,17 @@ class Enemy(pygame.sprite.Sprite):
             self.rect.x = SCREEN_WIDTH - self.rect.width
         self.rect.y = y
         
-    # Updates enemy
     def update(self, scroll):
         self.rect.y += scroll
         self.rect.x += self.speed * self.direction 
         if self.rect.top > SCREEN_HEIGHT or self.rect.right < 0 or self.rect.left > SCREEN_WIDTH:
             self.kill()
               
-    # Check if player touches the enemy
     def check_collision(self, player_rect):
         if self.rect.colliderect(player_rect):
             return True
         return False
     
-    # Draws enemy
     def draw(self, screen):
         screen.blit(self.image, self.rect)
 
@@ -201,7 +200,6 @@ def handle_background_scroll(bg_scroll, scroll, SCREEN_HEIGHT):
     draw_bg(bg_scroll)
     return bg_scroll
 
-# Draw line and high score at previous high score
 def draw_high_score_line(screen, WHITE, score, high_score, SCROLL_THRESH, SCREEN_WIDTH, font):
     pygame.draw.line(screen, WHITE, (0, score - high_score + SCROLL_THRESH), (SCREEN_WIDTH, score - high_score + SCROLL_THRESH), 4)
     draw_text('HIGH SCORE', font, WHITE, SCREEN_WIDTH - 130, score - high_score + SCROLL_THRESH)
@@ -214,7 +212,6 @@ def update_high_score(score, high_score):
             file.write(str(high_score))
     return high_score
 
-# Returns p_moving bool type value based on score and which platform type
 def check_score_500(p_type, score):
     if p_type == 1 and score > 500:
         p_moving = True
@@ -222,13 +219,11 @@ def check_score_500(p_type, score):
         p_moving = False
     return p_moving
 
-# Generate enemies
 def generate_enemies(enemy_group, score, SCREEN_WIDTH, ENEMY_SPAWN_Y):
     if len(enemy_group) == 0 and score > 1500:
         enemy = Enemy(SCREEN_WIDTH, ENEMY_SPAWN_Y)
         enemy_group.add(enemy)
         
-# Updates enemy posisions
 def update_enemies(enemy_group, scroll):
     for enemy in enemy_group:
         enemy.update(scroll)
@@ -239,13 +234,48 @@ def check_collision(enemy_group, player):
     for enemy in enemy_group:
         if enemy.check_collision(player.rect): 
             game_over = True
+            enemy_killed.play()
             break
     return game_over
 
-# Update score
-def update_score(scroll):
-    if scroll > 0:
-        score += scroll
+def generate_platforms(platform_group, score):
+    if len(platform_group) < MAX_PLATFORMS:
+        
+        # Get the last platform in the group
+        last_platform = platform_group.sprites()[-1]
+        
+        # Randomize platform width, x and y coordinates
+        p_w = random.randint(PLATFROM_WIDTH_FROM, PLATFROM_WIDTH_TILL)
+        p_x = random.randint(0, SCREEN_WIDTH - p_w)
+        
+        p_y = last_platform.rect.y - PLATFORM_Y_SPACING
+
+        # Radomize platform type
+        p_type = random.randint(1, 2)
+
+        # If platform is moving and score is over 500
+        p_moving = check_score_500(p_type, score)
+
+        platform = Platform(p_x, p_y, p_w, p_moving, score)
+        platform_group.add(platform)
+
+        # Sometimes to make 2nd platform on same y asis
+        if random.random() < CHANCE_FOR_2_PLATFORMS  and p_moving == False: 
+            p_w2 = random.randint(PLATFROM_WIDTH_FROM, PLATFROM_WIDTH_TILL)
+            p_x2 = random.randint(0, SCREEN_WIDTH - p_w2)
+
+            # Check if the new platform overlaps with the existing one
+            if p_x2 < p_x + p_w and p_x2 + p_w2 > p_x:
+                
+                # If it does, adjust its x-coordinate
+                p_x2 = p_x + p_w + random.randint(50, 100)
+
+            # Check if the new platform would be off-screen, and if so, adjust its x-coordinate
+            if p_x2 + p_w2 > SCREEN_WIDTH:
+                p_x2 = SCREEN_WIDTH - p_w2
+
+            platform2 = Platform(p_x2, p_y, p_w2, p_moving, score)
+            platform_group.add(platform2)
 
 # Player instance
 player = Player(PLAYER_X , PLAYER_Y)
@@ -254,7 +284,7 @@ player = Player(PLAYER_X , PLAYER_Y)
 platform_group = pygame.sprite.Group()
 enemy_group = pygame.sprite.Group()
 
-# Create starting platform from Platform class with not mooving type
+# Create starting platform from Platform class with non moving type
 platform = Platform(STARTING_PLATFORM_X, STARTING_PLATFORM_Y, STARTING_PLATFORM_WIDTH, False, score)
 platform_group.add(platform)
 
@@ -285,70 +315,35 @@ while run:
 		# Check for enemy collision
 		game_over = check_collision(enemy_group, player)
   
-####################################################################################################################################
-#MAKE THIS A FUNCtion
-####################################################################################################################################       
-		# Generate platforms
-		if len(platform_group) < MAX_PLATFORMS:
-      
-			# Randomize platform width, x and y coordinates
-			p_w = random.randint(PLATFROM_WIDTH_FROM, PLATFROM_WIDTH_TILL)
-			p_x = random.randint(0, SCREEN_WIDTH - p_w)
-			p_y = platform.rect.y - random.randint(100, 170)
-			
-			# Radomize platform type
-			p_type = random.randint(1, 2)
-   
-			# If platform is moving and score is over 500
-			p_moving = check_score_500(p_type, score)
-   
-            # Generates platforms with randomized paramaters from Platform class
-			platform = Platform(p_x, p_y, p_w, p_moving, score)
-			platform_group.add(platform)
-   
-			if random.random() < CHANCE_FOR_2_PLATFORMS: 
-				p_w2 = random.randint(PLATFROM_WIDTH_FROM, PLATFROM_WIDTH_TILL)
-				p_x2 = random.randint(0, SCREEN_WIDTH - p_w2)
+        # Generate platforms
+		generate_platforms(platform_group, score)
 
-				# Check if the new platform overlaps with the existing one
-				if p_x2 < p_x + p_w and p_x2 + p_w2 > p_x:
-        
-					# If it does, adjust its x-coordinate
-					p_x2 = p_x + p_w + random.randint(50, 100)
-     
-				# Check if the new platform would be off-screen, and if so, adjust its x-coordinate
-				if p_x2 + p_w2 > SCREEN_WIDTH:
-					p_x2 = SCREEN_WIDTH - p_w2
-
-				platform2 = Platform(p_x2, p_y, p_w2, p_moving, score)
-				platform_group.add(platform2)
-  
 		#update platforms
 		platform_group.update(scroll)
-####################################################################################################################################
-####################################################################################################################################
 
-        # Update score
 		if scroll > 0:
 			score += scroll
+   
 		#draw sprites
 		platform_group.draw(screen)
 		enemy_group.draw(screen)
 		player.draw()
 
 		#draw panel that shows current score
-		draw_panel()
+		draw_score()
 
 		#check if player falls under screen
 		if player.rect.top > SCREEN_HEIGHT:
+			fall_sound.play()
 			game_over = True
    
     # If game is over block
 	else:
+            # Draw end game screen
 			screen.fill(BLACK)
 			draw_text('GAME OVER!', font, RED, 130, 200)
-			draw_text('SCORE: ' + str(score), font, WHITE, 150, 250)
-			draw_text('PRESS SPACE TO PLAY AGAIN', font, WHITE, 20, 300)
+			draw_text('SCORE: ' + str(score), font, GREEN, 0, 0)
+			draw_text('PRESS SPACE TO PLAY AGAIN', font, WHITE, 30, 300)
    
 			#updates high score at the end of the game
 			high_score = update_high_score(score, high_score)
@@ -358,7 +353,9 @@ while run:
    
             # When retrying game
 			if key[pygame.K_SPACE]:
-			
+       
+				start_sound.play()
+    
 				#reset variables
 				game_over = False
 				score = 0
